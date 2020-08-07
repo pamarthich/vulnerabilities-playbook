@@ -1,0 +1,134 @@
+---
+- hosts: rhel
+  become: yes
+  tasks:
+    - name: update yum packages
+      yum:
+        name: "*"
+        state: latest
+        security: yes
+    - name: Installing AIDE
+      yum:
+        name: aide
+        state: latest
+
+    - name: Initializing ADIE
+      command: "{{ item }}"
+      with_items:
+        - aide --init
+        - mv /var/lib/aide/aide.db.new.gz /var/lib/aide/aide.db.gz
+
+    - name: create file
+      file:
+        path: /etc/modprobe.d/CIS.conf
+        state: touch # to creat a new file
+    - name: adding CIS entries
+      blockinfile:
+        path: /etc/modprobe.d/CIS.conf
+        block: |
+          install cramfs /bin/true
+          install freevxfs /bin/true
+          install jffs2 /bin/true
+          install hfs /bin/true
+          install hfsplus /bin/true
+          install squashfs /bin/true
+          install udf /bin/true
+          install vfat /bin/true
+          options ipv6 disable=1
+
+    - name: Ensure filesystem integrity is regularly checked
+      cron:
+        name: "Ensure filesystem integrity is checked"
+        minute: "0"
+        hour: "5"
+        job: "/usr/sbin/aide --check"
+
+    - name: Ensure permissions on bootloader config are configured
+      command: "{{ item }}"
+      with_items:
+        - chown root:root /boot/grub2/grub.cfg
+        - chmod og-rwx /boot/grub2/grub.cfg
+
+    - name: Ensure Core Dumps are restricted in limits.conf
+      lineinfile:
+        path: /etc/security/limits.conf
+        line: "* hard core 0"
+
+    - name: Ensure Core Dumps Restricted in sysctl.conf
+      lineinfile:
+        path: /etc/sysctl.conf
+        line: fs.suid_dumpable = 0
+
+    - name: Setting Active Kernel Parameter
+      command: sysctl -w fs.suid_dumpable=0
+
+    - name: Ensure local login warning banner is configured properly
+      replace:
+        path: /etc/issue
+        regexp: "(.*Kernel.*)"
+        replace: '#\1'
+    - name: local banner
+      lineinfile:
+        path: /etc/issue
+        line: Authorized uses only. All activity may be monitored and reported
+
+    - name: Ensure remote login warning banner is configured properly
+      replace:
+        path: /etc/issue.net
+        regexp: "(.*Kernel.*)"
+        replace: '#\1'
+
+    - name: remote banner
+      lineinfile:
+        path: /etc/issue.net
+        line: Authorized uses only. All activity may be monitored and reported
+
+    - name: Ensure packet redirect sending is disabled
+      blockinfile:
+        path: /etc/sysctl.conf
+        block: |
+          net.ipv4.conf.all.send_redirects = 0
+          net.ipv4.conf.default.send_redirects = 0
+          net.ipv4.conf.all.accept_redirects = 0
+          net.ipv4.conf.default.accept_redirects = 0
+          net.ipv4.conf.all.secure_redirects = 0
+          net.ipv4.conf.default.secure_redirects = 0
+          net.ipv4.conf.all.log_martians = 1
+          net.ipv4.conf.default.log_martians = 1
+          net.ipv6.conf.all.accept_ra = 0
+          net.ipv6.conf.default.accept_ra = 0
+          net.ipv6.conf.all.accept_redirects = 0
+          net.ipv6.conf.default.accept_redirects = 0
+
+    - name: Setting Active Kernel Parameter
+      command: "{{ item }}"
+      with_items:
+        - sysctl -w net.ipv4.conf.all.send_redirects=0
+        - sysctl -w net.ipv4.conf.default.send_redirects=0
+        # - sysctl -w net.ipv4.route.flush=1
+        - sysctl -w net.ipv4.conf.all.accept_redirects=0
+        - sysctl -w net. ipv4.conf.default.accept_redirects=0
+        # - sysctl -w net.ipv4.route.flush=1
+        - sysctl -w net.ipv4.conf.all.secure_redirects=0
+        - sysctl -w net.ipv4.conf.default.secure_redirects=0
+        - sysctl -w net.ipv4.conf.all.log_martians=1
+        - sysctl -w net.ipv4.conf.default.log_martians=1
+        - sysctl -w net.ipv6.conf.default.accept_ra=0
+        - sysctl -w net.ipv6.conf.all.accept_ra=0
+        - sysctl -w net.ipv6.conf.all.accept_redirects=0
+        - sysctl -w net.ipv6.conf.default.accept_redirects=0
+        - sysctl -w net.ipv4.route.flush=1
+        - sysctl -w net.ipv6.route.flush=1
+
+    - name: Installing TCP Wrappers
+      yum:
+        name: tcp_wrappers
+        state: latest
+    - name: Ensure /etc/hosts.allow is configured
+      file:
+        path: /etc/hosts.allow
+        state: touch
+    - name: Entry to deny all hosts
+      lineinfile:
+        path: /etc/hosts.allow
+        line: ALL:ALL
